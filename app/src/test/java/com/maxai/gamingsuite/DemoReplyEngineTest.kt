@@ -1,22 +1,21 @@
 package com.maxai.gamingsuite
 
-import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-class DemoReplyEngineTest {
+class ModuleProfileTest {
     @Test
-    fun emptyMessageGetsPrompt() {
-        assertEquals("Please type a message first.", DemoReplyEngine.reply("   "))
+    fun performanceProfileWarnsAboutHeat() {
+        assertTrue(profileDescription("Extreme Performance").contains("heat"))
     }
 
     @Test
-    fun greetingGetsGreetingResponse() {
-        assertTrue(DemoReplyEngine.reply("hello").contains("Hello"))
+    fun batteryProfileRecommendsLowerSettings() {
+        assertTrue(profileDescription("Ultra Battery Saver").contains("brightness"))
     }
 
     @Test
-    fun gamingQuestionGetsSafeGuidance() {
-        assertTrue(DemoReplyEngine.reply("How do I improve gaming?").contains("Game Mode"))
+    fun balancedProfileHasSafeGuidance() {
+        assertTrue(profileDescription("Smart Balanced").contains("monitor heat"))
     }
 }
