@@ -670,6 +670,27 @@ internal fun profileDescription(profile: String) = when (profile) {
 }
 
 @Composable
+private fun TipCard(title: String, detail: String) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = SurfaceDeep),
+        shape = RoundedCornerShape(18.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(15.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.Top
+        ) {
+            Icon(Icons.Default.Info, contentDescription = null, tint = Cyan)
+            Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                Text(title, color = Cyan, fontWeight = FontWeight.Bold)
+                Text(detail, color = TextMuted, style = MaterialTheme.typography.bodySmall)
+            }
+        }
+    }
+}
+
+@Composable
 private fun MetricCard(title: String, value: String, detail: String, icon: androidx.compose.ui.graphics.vector.ImageVector, modifier: Modifier = Modifier) {
     Card(modifier, colors = CardDefaults.cardColors(containerColor = SurfaceDeep), shape = RoundedCornerShape(18.dp)) {
         Column(Modifier.padding(15.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) { Icon(icon, null, tint = Cyan); Text(title, color = TextMuted, style = MaterialTheme.typography.labelSmall); Text(value, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Black); Text(detail, color = TextMuted, style = MaterialTheme.typography.bodySmall) }
