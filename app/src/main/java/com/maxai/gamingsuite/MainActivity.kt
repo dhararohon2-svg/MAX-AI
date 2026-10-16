@@ -86,7 +86,15 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this)) {
                     startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, android.net.Uri.parse("package:$packageName")))
                 } else {
-                    startService(Intent(this, GamingOverlayService::class.java))
+                    // Android 13+ notification access is requested at runtime. The user can
+                    // still use the overlay if notification permission is denied, but Android
+                    // may show the foreground-service notice in system task manager instead.
+                    if (Build.VERSION.SDK_INT >= 33 &&
+                        ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                        requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 7105)
+                    }
+                    runCatching { startForegroundService(Intent(this, GamingOverlayService::class.java)) }
+                        .onFailure { runCatching { startService(Intent(this, GamingOverlayService::class.java)) } }
                 }
             })
         }
@@ -280,12 +288,64 @@ private fun HomePage(enabledCount: Int, apiReady: Boolean, onNavigate: (Page) ->
         }
         item { Text("COMMAND CENTER", color = Purple, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold) }
         item { ActionCard("In-game Floating Panel", "Slim red trigger bar • portrait and landscape", Icons.Default.Games) { onOpenOverlay() } }
+        item { OverlayPermissionSettingsCard() }
         item { ActionCard("Game Library", "Add any launchable installed app", Icons.Default.SportsEsports) { onNavigate(Page.GAMES) } }
         item { ActionCard("Module Hub", "Enable or disable each feature", Icons.Default.Tune) { onNavigate(Page.MODULES) } }
         item { ActionCard("Live Device Monitor", "Memory, battery and thermal state", Icons.Default.MonitorHeart) { onNavigate(Page.MONITOR) } }
         item { ActionCard("Voice & Language", "Talk to MAX AI using Android speech", Icons.Default.RecordVoiceOver) { onNavigate(Page.VOICE) } }
         item { ActionCard("API & Privacy Settings", "Store your API key on this device", Icons.Default.Key) { onNavigate(Page.SETTINGS) } }
         item { Text("*API status means a key is saved locally; it does not guarantee the provider is reachable.", color = TextMuted, style = MaterialTheme.typography.bodySmall) }
+    }
+}
+
+@Composable
+private fun OverlayPermissionSettingsCard() {
+    val context = LocalContext.current
+    var granted by remember { mutableStateOf(Build.VERSION.SDK_INT < Build.VERSION_CODES.M || Settings.canDrawOverlays(context)) }
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner, context) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                granted = Build.VERSION.SDK_INT < Build.VERSION_CODES.M || Settings.canDrawOverlays(context)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+    Card(
+        colors = CardDefaults.cardColors(containerColor = SurfaceDeep),
+        shape = RoundedCornerShape(20.dp),
+        modifier = Modifier.fillMaxWidth().border(1.dp, if (granted) Cyan.copy(alpha = .55f) else Color(0xFFFF334F).copy(alpha = .75f), RoundedCornerShape(20.dp))
+    ) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.Layers, contentDescription = null, tint = if (granted) Cyan else Color(0xFFFF5268))
+                Spacer(Modifier.width(10.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("OVERLAY PERMISSION", color = Color.White, fontWeight = FontWeight.Bold)
+                    Text(if (granted) "Granted — floating bar can be started" else "Required to show the floating trigger bar", color = TextMuted, style = MaterialTheme.typography.bodySmall)
+                }
+                Text(if (granted) "GRANTED" else "NEEDED", color = if (granted) Cyan else Color(0xFFFF5268), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+            }
+            Text("Tap below to open Android's official ‘Display over other apps’ permission page for MAX AI. Turn on ‘Allow display over other apps’, then return here.", color = TextMuted, style = MaterialTheme.typography.bodySmall)
+            Button(
+                onClick = {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                        val intent = Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, android.net.Uri.parse("package:${context.packageName}"))
+                        runCatching { context.startActivity(intent) }.onFailure {
+                            context.startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION))
+                        }
+                    }
+                },
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = if (granted) SurfaceRaised else Color(0xFFD91F3B), contentColor = Color.White)
+            ) {
+                Icon(Icons.Default.Security, contentDescription = null)
+                Spacer(Modifier.width(8.dp))
+                Text(if (granted) "OPEN OVERLAY PERMISSION SETTINGS" else "GRANT OVERLAY PERMISSION")
+            }
+        }
     }
 }
 
