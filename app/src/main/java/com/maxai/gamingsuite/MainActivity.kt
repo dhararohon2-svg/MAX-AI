@@ -81,11 +81,58 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         tts = TextToSpeech(this, this)
-        setContent { MaxAiApp(::speak) }
+        setContent {
+            MaxAiApp(::speak, onOpenOverlay = {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this)) {
+                    startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, android.net.Uri.parse("package:$packageName")))
+                } else {
+                    startService(Intent(this, GamingOverlayService::class.java))
+                }
+            })
+        }
     }
-    override fun onInit(status: Int) { if (status == TextToSpeech.SUCCESS) tts?.language = Locale.getDefault() }
-    private fun speak(value: String) { tts?.speak(value, TextToSpeech.QUEUE_FLUSH, null, "max_ai_reply") }
+    override fun onInit(status: Int) {
+        if (status == TextToSpeech.SUCCESS) {
+            val engine = tts ?: return
+            val language = Locale.getDefault()
+            val result = engine.setLanguage(language)
+            // Slightly slower, conversational delivery. Actual voice quality depends on the
+            // speech engine and installed Bengali/other language voice data.
+            engine.setSpeechRate(0.93f)
+            engine.setPitch(1.02f)
+            if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
+                engine.language = Locale.US
+            }
+        }
+    }
+    private fun speak(value: String) {
+        val spoken = SpeechTextCleaner.forSpeech(value)
+        if (spoken.isNotBlank()) tts?.speak(spoken, TextToSpeech.QUEUE_FLUSH, null, "max_ai_reply")
+    }
     override fun onDestroy() { tts?.stop(); tts?.shutdown(); super.onDestroy() }
+}
+
+/** Removes decorative markup/emojis before TTS, while preserving readable words and sentence pauses. */
+internal object SpeechTextCleaner {
+    fun forSpeech(input: String): String {
+        var text = input
+            .replace(Regex("```[\\s\\S]*?```"), " code omitted ")
+            .replace(Regex("`([^`]+)`"), "$1")
+            .replace(Regex("!\\[([^]]*)]\\([^)]*\\)"), "$1")
+            .replace(Regex("\\[([^]]+)]\\([^)]*\\)"), "$1")
+            .replace(Regex("https?://\\S+"), " link omitted ")
+            .replace(Regex("<[^>]*>"), " ")
+            .replace(Regex("[*_~#>|]"), " ")
+        // Strip emoji/symbol code points, but keep language letters and natural punctuation.
+        text = text.replace(Regex("[\\uD800-\\uDBFF][\\uDC00-\\uDFFF]"), " ")
+            .replace(Regex("[\\u2600-\\u27BF]"), " ")
+            .replace(Regex("[\\uFE0F\\u200D]"), " ")
+            .replace(Regex("[^\\p{L}\\p{N}\\p{M}\\s.,!?;:'’()\\-]"), " ")
+            .replace(Regex("\\s+([.,!?;:])"), "$1")
+            .replace(Regex("([.,!?;:]){2,}"), "$1")
+            .replace(Regex("\\s{2,}"), " ")
+        return text.trim()
+    }
 }
 
 private enum class Page(val label: String) {
@@ -114,7 +161,7 @@ private val moduleCatalog = listOf(
 )
 
 @Composable
-private fun MaxAiApp(onSpeak: (String) -> Unit) {
+private fun MaxAiApp(onSpeak: (String) -> Unit, onOpenOverlay: () -> Unit) {
     val context = LocalContext.current
     val normalPrefs = remember { context.getSharedPreferences("max_ai_preferences", Context.MODE_PRIVATE) }
     val securePrefsResult = remember { runCatching { securePreferences(context) } }
@@ -165,7 +212,8 @@ private fun MaxAiApp(onSpeak: (String) -> Unit) {
                         enabledCount = modules.values.count { it },
                         apiReady = !securePrefs.getString("api_key", "").isNullOrBlank(),
                         onNavigate = { page = it },
-                        modules = modules
+                        modules = modules,
+                        onOpenOverlay = onOpenOverlay
                     )
                     Page.CHAT -> if (modules["General AI Chat"] == true) ChatPage(securePrefs, onSpeak) else DisabledPage("General AI Chat", { page = Page.MODULES })
                     Page.GAMES -> if (modules["Game Library"] == true) GamesPage(normalPrefs) else DisabledPage("Game Library", { page = Page.MODULES })
@@ -195,7 +243,7 @@ private fun pageIcon(page: Page) = when (page) {
 }
 
 @Composable
-private fun HomePage(enabledCount: Int, apiReady: Boolean, onNavigate: (Page) -> Unit, modules: Map<String, Boolean>) {
+private fun HomePage(enabledCount: Int, apiReady: Boolean, onNavigate: (Page) -> Unit, modules: Map<String, Boolean>, onOpenOverlay: () -> Unit) {
     val pulse = rememberInfiniteTransition(label = "hero-pulse")
     val scale by pulse.animateFloat(.96f, 1.04f, infiniteRepeatable(tween(1800, easing = FastOutSlowInEasing), RepeatMode.Reverse), label = "scale")
     LazyColumn(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color(0xFF121E3C), Void))), contentPadding = PaddingValues(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -231,6 +279,7 @@ private fun HomePage(enabledCount: Int, apiReady: Boolean, onNavigate: (Page) ->
             }
         }
         item { Text("COMMAND CENTER", color = Purple, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold) }
+        item { ActionCard("In-game Floating Panel", "Slim red trigger bar • portrait and landscape", Icons.Default.Games) { onOpenOverlay() } }
         item { ActionCard("Game Library", "Add any launchable installed app", Icons.Default.SportsEsports) { onNavigate(Page.GAMES) } }
         item { ActionCard("Module Hub", "Enable or disable each feature", Icons.Default.Tune) { onNavigate(Page.MODULES) } }
         item { ActionCard("Live Device Monitor", "Memory, battery and thermal state", Icons.Default.MonitorHeart) { onNavigate(Page.MONITOR) } }
